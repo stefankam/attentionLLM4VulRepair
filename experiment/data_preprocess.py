@@ -24,18 +24,18 @@ parser.set_language(LANGUAGE)
 parser.set_language(LANGUAGE)
 lang = 'python'
 parser = [parser, dfg_function[lang]]
-code_tokens, dfg = DFG_getter.get_data_flow(code, parser)
+raw_code_tokens, dfg = DFG_getter.get_data_flow(code, parser)
 normalized_dfg = DFG_getter.normalize_dataflow(dfg)
 
 tokenizer = RobertaTokenizer.from_pretrained("microsoft/codebert-base")
 model = RobertaModel.from_pretrained("microsoft/codebert-base")
 
 code_tokens = [tokenizer.tokenize('@ '+x)[1:] if idx!=0 else tokenizer.tokenize(x)
-               for idx,x in enumerate(code_tokens)]
+               for idx,x in enumerate(raw_code_tokens)]
 ori2cur_pos = {-1: (0, 0)}
 for i in range(len(code_tokens)):
-    ori2cur_pos[i]=(ori2cur_pos[i-1][1],ori2cur_pos[i-1][1]+len(code_tokens[i]))
-code_tokens=[y for x in code_tokens for y in x]
+    ori2cur_pos[i] = (ori2cur_pos[i-1][1],ori2cur_pos[i-1][1]+len(code_tokens[i]))
+code_tokens = [y for x in code_tokens for y in x]
 
 code_tokens = code_tokens[:max_target_length - 3]
 source_tokens = [tokenizer.cls_token]+code_tokens+[tokenizer.sep_token]
@@ -60,12 +60,13 @@ dfg_to_code = [ori2cur_pos[x[1]] for x in dfg]
 length = len([tokenizer.cls_token])
 dfg_to_code = [(x[0] + length, x[1] + length) for x in dfg_to_code]
 
-print("generated dfg: ")
+print("generated dfg: " + str(len(dfg)))
 for x in dfg:
     print(x)
 
-print("generated dfg_to_code: ")
+print("generated dfg_to_code: " + str(len(dfg_to_code)))
 for x in dfg_to_code:
     print(x)
+
 
 
