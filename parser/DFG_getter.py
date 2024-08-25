@@ -29,8 +29,8 @@ def get_data_flow(code, parser):
         codes = code_tokens
         dfg = new_DFG
     except:
-        codes = code.split()
         dfg = []
+        code_tokens = []
     #merge nodes
     dic = {}
     for d in dfg:
@@ -42,7 +42,7 @@ def get_data_flow(code, parser):
     for d in dic:
         new_DFG.append(dic[d])
     dfg = new_DFG
-    return code, dfg
+    return code_tokens, dfg
 
 
 def normalize_dataflow_item(dataflow_item):
