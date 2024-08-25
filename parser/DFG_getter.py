@@ -1,9 +1,9 @@
-from parser.dfg.utils import tree_to_token_index, index_to_code_token
+from parser.utils import tree_to_token_index, index_to_code_token
 
 
 def get_data_flow(code, parser):
     try:
-        tree = parser.parse(bytes(code, 'utf8'))
+        tree = parser[0].parse(bytes(code, 'utf8'))
         root_node = tree.root_node
         tokens_index = tree_to_token_index(root_node)
         code = code.split('\n')
@@ -12,7 +12,7 @@ def get_data_flow(code, parser):
         for idx, (index, code) in enumerate(zip(tokens_index, code_tokens)):
             index_to_code[index] = (idx, code)
         try:
-            DFG, _ = parser(root_node, index_to_code, {})
+            DFG, _ = parser[1](root_node, index_to_code, {})
         except:
             DFG = []
         DFG = sorted(DFG, key=lambda x: x[1])
@@ -38,11 +38,11 @@ def get_data_flow(code, parser):
             dic[d[1]] = d
         else:
             dic[d[1]] = (d[0], d[1], d[2], list(set(dic[d[1]][3] + d[3])), list(set(dic[d[1]][4] + d[4])))
-    DFG = []
+    new_DFG = []
     for d in dic:
-        DFG.append(dic[d])
-    dfg = DFG
-    return dfg, code
+        new_DFG.append(dic[d])
+    dfg = new_DFG
+    return code, dfg
 
 
 def normalize_dataflow_item(dataflow_item):

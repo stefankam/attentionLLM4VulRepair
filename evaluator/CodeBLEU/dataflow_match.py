@@ -1,20 +1,15 @@
 # Copyright (c) Microsoft Corporation. 
 # Licensed under the MIT license.
-from parser.dfg.DFG import DFG_python, DFG_java, DFG_ruby, DFG_go, DFG_php, DFG_javascript, DFG_csharp
-from parser.dfg.utils import remove_comments_and_docstrings
+from parser.DFG import DFG_python, DFG_java
+from parser.utils import remove_comments_and_docstrings
 from tree_sitter import Language, Parser
 
-from parser.dfg.DFG_getter import get_data_flow, normalize_dataflow
+from parser.DFG_getter import get_data_flow, normalize_dataflow
 import parser
 
 dfg_function = {
     'python': DFG_python,
     'java': DFG_java,
-    'ruby': DFG_ruby,
-    'go': DFG_go,
-    'php': DFG_php,
-    'javascript': DFG_javascript,
-    'c_sharp': DFG_csharp,
 }
 
 
