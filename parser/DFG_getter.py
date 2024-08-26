@@ -5,12 +5,14 @@ def get_data_flow(code, parser):
     try:
         tree = parser[0].parse(bytes(code, 'utf8'))
         root_node = tree.root_node
+        # the token start and end points
         tokens_index = tree_to_token_index(root_node)
         code = code.split('\n')
         code_tokens = [index_to_code_token(x, code) for x in tokens_index]
         index_to_code = {}
         for idx, (index, code) in enumerate(zip(tokens_index, code_tokens)):
             index_to_code[index] = (idx, code)
+        # index_to_code: (start points, end points) -> (token index, token code)
         try:
             DFG, _ = parser[1](root_node, index_to_code, {})
         except:
