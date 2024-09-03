@@ -3,6 +3,7 @@ import torch
 from torch_geometric.data import Data
 
 from model.GAT_model import GATModel
+from model.graph_attention_v2 import GraphAttentionV2
 from parser import DFG_getter
 import parser
 from tree_sitter import Language, Parser
@@ -20,18 +21,19 @@ dfg_function = {
 }
 
 
-def build_graph(dfg, code_tokens, dfg_to_code, max_target_length=48):
+def build_graph(dfg, code_tokens, dfg_to_code, max_target_length=128):
     edges = []
     data = []
     for idx, x in enumerate(dfg):
-        raw_data = tokenizer.convert_tokens_to_ids(code_tokens[dfg_to_code[idx][0]:dfg_to_code[idx][1]])
-        raw_data.extend([tokenizer.pad_token_id] * (max_target_length - len(raw_data)))
-        data.append(raw_data)
+        tokens_ids = tokenizer.convert_tokens_to_ids(code_tokens[dfg_to_code[idx][0]:dfg_to_code[idx][1]])
+        tokens_ids.extend([tokenizer.pad_token_id] * (max_target_length - len(tokens_ids)))
+        context_embeddings = model(torch.tensor(tokens_ids)[None, :])[0].squeeze().sum(dim=0)
+        data.append(context_embeddings)
         for y in x[-1]:
             edges.append((y, idx))
     edge_index = torch.tensor(edges, dtype=torch.long).t().contiguous()
-    x = torch.tensor(data, dtype=torch.float)
-    return Data(x=x, edge_index=edge_index)
+    x = torch.stack(data)
+    return Data(x=x.squeeze(), edge_index=edge_index)
 
 
 max_target_length = 512
@@ -58,9 +60,11 @@ for i in range(len(code_tokens)):
     ori2cur_pos[i] = (ori2cur_pos[i - 1][1], ori2cur_pos[i - 1][1] + len(code_tokens[i]))
 # flat all tokens into one
 code_tokens = [y for x in code_tokens for y in x]
-code_tokens = [tokenizer.cls_token] + code_tokens + [tokenizer.sep_token]
-reverse_index = {}
+code_tokens = [tokenizer.cls_token] + code_tokens + [tokenizer.eos_token]
+tokens_ids = tokenizer.convert_tokens_to_ids(code_tokens)
+sequence_embeddings = model(torch.tensor(tokens_ids)[None, :])[0]
 
+reverse_index = {}
 for idx, x in enumerate(dfg):
     reverse_index[x[1]] = idx
 
@@ -79,8 +83,15 @@ graph_data = build_graph(dfg, code_tokens, dfg_to_code)
 
 in_channels = graph_data.x.size(-1)
 out_channels = 768  # Same dimension as CodeBERT embeddings
+num_heads = 8
 model = GATModel(in_channels, out_channels)
 x, attention = model(graph_data)
 
-print(x.size())
-print(attention)
+graph_embeddings = x
+
+graph_model = GraphAttentionV2(embed_dim=out_channels, num_heads=1)
+print(sequence_embeddings.shape)
+# sequence_embeddings = sequence_embeddings.unsqueeze(0)
+# graph_embeddings = graph_embeddings.unsqueeze(0)
+print(sequence_embeddings.shape)
+output, attn_weights = graph_model(sequence_embeddings.squeeze(), graph_embeddings.squeeze())
