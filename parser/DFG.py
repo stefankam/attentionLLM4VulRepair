@@ -8,7 +8,7 @@ from .utils import (remove_comments_and_docstrings,
                    tree_to_variable_index)
 
 
-def DFG_python(root_node,index_to_code,states):
+def DFG_python(root_node, index_to_code, states):
     assignment=['assignment','augmented_assignment','for_in_clause']
     if_statement=['if_statement']
     for_statement=['for_statement']
