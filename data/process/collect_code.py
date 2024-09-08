@@ -9,7 +9,6 @@ token = ""
 train_and_valid_ratio = 0.8
 numb_patches = 1
 isTrain = False
-tagVulnerable = False
 
 data_file = "data/raw_data/{}.json".format(vulnerability)
 output_path = "data/processed_data/" + vulnerability
