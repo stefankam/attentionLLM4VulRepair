@@ -1,7 +1,7 @@
-import ast
 import base64
 import json
 import os
+import shutil
 
 from github import UnknownObjectException, Auth, Github
 
@@ -70,7 +70,12 @@ def read_prompts(filename):
 def process_source_code(code, diff_codes, tag):
     replaced_code = code.replace("{{/*", "'''").replace("*/}}", "'''")
     for code in diff_codes:
-        replaced_code = replaced_code.replace(code, "<{}/>".format(tag) + code + "</{}>".format(tag))
+        start_index = replaced_code.find(code)
+        end_index = start_index + len(code)
+        if start_index != -1:
+            replaced_code = (replaced_code[:start_index] + "<{}/>".format(tag) +
+                             replaced_code[start_index:end_index] + "</{}>".format(tag) +
+                             replaced_code[end_index:])
     return replaced_code
 
 
@@ -119,9 +124,7 @@ def download_vulnerable_file(patch_record, github_client, output_path,
                 fixed_git_files = repo.get_contents(path=file_path, ref=commits[0].sha)
                 raw_file_data = base64.b64decode(raw_git_file.content)
                 fixed_file_data = base64.b64decode(fixed_git_files.content)
-                print(prompts[1])
                 raw_processed_sourced = process_source_code(raw_file_data.decode("utf-8"), prompts, tag="vul")
-                print(labels[1])
                 fixed_processed_sourced = process_source_code(fixed_file_data.decode("utf-8"), labels, tag="fix")
                 try:
                     # ast.parse(raw_processed_sourced)
@@ -152,3 +155,47 @@ def download_vulnerable_file(patch_record, github_client, output_path,
 def get_github_client(token):
     auth = Auth.Token(token)
     return Github(auth=auth)
+
+
+def collect_codes_single_data(vulnerability, token, data_type,
+                              data_path,
+                              output_path,
+                              numb_patches=-1,
+                              train_ratio=0.7, valid_ratio=0.2):
+    # vulnerability = "sql_injection"
+    # token = ""
+    # train_ratio = 0.7
+    # valid_ratio = 0.2
+    # numb_patches = 1
+    # data_type = "train"
+
+    # data_file = "data/raw_data/{}.json".format(vulnerability)
+    data_file = data_path + "/{}.json".format(vulnerability)
+    # output_path = "data/processed_data/" + vulnerability + "/" + data_type
+    output_path = output_path + "/" + vulnerability + "/" + data_type
+
+    if os.path.exists(output_path):
+        shutil.rmtree(output_path)
+    os.makedirs(output_path)
+
+    g = get_github_client(token)
+
+    records = read_patches(data_file)
+    total_patches = len(records)
+    if numb_patches == -1:
+        numb_patches = total_patches
+    if data_type == "train":
+        test_start_point = 0
+        numb_patches = min(numb_patches, int(total_patches * train_ratio))
+    elif data_type == "valid":
+        test_start_point = int(total_patches * train_ratio)
+        numb_patches = min(numb_patches, int(total_patches * valid_ratio))
+    else:
+        test_start_point = int(total_patches * (train_ratio + valid_ratio))
+        numb_patches = min(numb_patches, total_patches - test_start_point)
+
+    graped_records = records[test_start_point:test_start_point + numb_patches]
+
+    num_available_commits = download_vulnerable_files(graped_records, output_path, g)
+
+    print("Collected {} commits for vulnerability {}".format(num_available_commits, vulnerability))
