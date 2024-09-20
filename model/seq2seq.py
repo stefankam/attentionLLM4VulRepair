@@ -15,8 +15,6 @@ logger = logging.getLogger(__name__)
 
 
 def add_args(parser):
-    parser.add_argument("--task", type=str, required=True,
-                        choices=['summarize', 'concode', 'translate', 'refine', 'defect', 'clone', 'multi_task'])
     parser.add_argument("--sub_task", type=str, default='')
     parser.add_argument("--lang", type=str, default='')
     parser.add_argument("--eval_task", type=str, default='')
@@ -26,10 +24,6 @@ def add_args(parser):
     parser.add_argument("--start_epoch", default=0, type=int)
     parser.add_argument("--num_train_epochs", default=100, type=int)
     parser.add_argument("--patience", default=5, type=int)
-    parser.add_argument("--cache_path", type=str, required=True)
-    parser.add_argument("--summary_dir", type=str, required=True)
-    parser.add_argument("--data_dir", type=str, required=True)
-    parser.add_argument("--res_dir", type=str, required=True)
     parser.add_argument("--res_fn", type=str, default='')
     parser.add_argument("--add_task_prefix", action='store_true', help="Whether to add task prefix for t5 and codet5")
     parser.add_argument("--save_last_checkpoints", action='store_true')
@@ -39,8 +33,6 @@ def add_args(parser):
     ## Required parameters
     parser.add_argument("--model_name_or_path", default="roberta-base", type=str,
                         help="Path to pre-trained model: e.g. roberta-base")
-    parser.add_argument("--output_dir", default=None, type=str, required=True,
-                        help="The output directory where the model predictions and checkpoints will be written.")
     parser.add_argument("--load_model_path", default=None, type=str,
                         help="Path to trained model: Should contain the .bin files")
     ## Other parameters
@@ -105,15 +97,6 @@ def add_args(parser):
     parser.add_argument('--seed', type=int, default=1234,
                         help="random seed for initialization")
     args = parser.parse_args()
-
-    if args.task in ['summarize']:
-        args.lang = args.sub_task
-    elif args.task in ['refine', 'concode', 'clone']:
-        args.lang = 'java'
-    elif args.task == 'defect':
-        args.lang = 'c'
-    elif args.task == 'translate':
-        args.lang = 'c_sharp' if args.sub_task == 'java-cs' else 'java'
     return args
 
 

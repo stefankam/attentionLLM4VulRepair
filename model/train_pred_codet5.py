@@ -1,30 +1,23 @@
 import torch
 from torch import nn
-from transformers import RobertaTokenizer, RobertaModel, RobertaConfig, T5ForConditionalGeneration, T5Config, \
-    T5Tokenizer
+from transformers import T5ForConditionalGeneration, T5Config, T5Tokenizer
 from model.data_loader import data_loader
 from model.GAT_model import GATModel
 from model.graph_attention_v2 import GraphAttentionV2
-from model.seq2seq import Seq2Seq, add_args, build_or_load_gen_model, Beam, RobertaClassificationHead, CloneModel
+from model.seq2seq import Seq2Seq, add_args, build_or_load_gen_model, Beam
 import argparse
 
 # Initialize graph and sequence models
 in_channels = 768
 out_channels = 768
 
+
 # Parser
 parser = argparse.ArgumentParser()
 args = add_args(parser)
 config, model, tokenizer = build_or_load_gen_model(args)
 
-MODEL_CLASSES = {'roberta': (RobertaConfig, RobertaModel, RobertaTokenizer),
-                 't5': (T5Config, T5ForConditionalGeneration, T5Tokenizer),
-                 'codet5': (T5Config, T5ForConditionalGeneration, RobertaTokenizer)}
-config_class, model_class, tokenizer_class = MODEL_CLASSES[args.model_type]
-config = config_class.from_pretrained(args.config_name if args.config_name else args.model_name_or_path)
-tokenizer = tokenizer_class.from_pretrained(args.tokenizer_name)
-
-encoder = model_class.from_pretrained(args.model_name_or_path, config=config)
+encoder = T5ForConditionalGeneration.from_pretrained("Salesforce/codet5-base").encoder
 
 class modifiedSeq2Seq():
     def __init__(self, encoder_output, decoder, labels, config, beam_size=None, max_length=None, sos_id=None, eos_id=None):
