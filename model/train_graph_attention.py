@@ -1,12 +1,13 @@
 import torch
 from torch import nn
 from torch.optim import Adam
-from transformers import RobertaTokenizer, RobertaModel, T5ForConditionalGeneration, T5Config, BeamSearchScorer
-from torch.utils.data import DataLoader
+from transformers import RobertaTokenizer, RobertaModel, RobertaConfig, T5ForConditionalGeneration, T5Config, T5Tokenizer
+from model.data_loader import data_loader
 from experiment.utils import get_graph_dfg_data
 from model.GAT_model import GATModel
 from model.graph_attention_v2 import GraphAttentionV2
-from model.graph_augmented_transformer import GraphAugmentedEncoder
+from model.seq2seq import Seq2Seq, add_args,  build_or_load_gen_model
+import argparse
 
 # Initialize tokenizer and models
 tokenizer = RobertaTokenizer.from_pretrained("Salesforce/codet5-base")
@@ -17,6 +18,15 @@ in_channels = 768
 out_channels = 768
 
 # Tokenize the original input code (you can also pass tokenized_codes from earlier)
+# Test the data loader
+for batch in data_loader:
+    codes, fixes, graphs, sequence_embeddings, fix_embeddings = batch
+    print(f"Batch Codes: {codes}")
+    print(f"Batch Fixes: {fixes}")
+    print(f"Batch Graph Shape: {graphs}")
+    print(f"Batch Sequence Embeddings Shape: {sequence_embeddings.shape}")
+    print(f"Batch fix embeddings Shape: {fix_embeddings.shape}")
+    break  # Just testing the first batch
 tokenized_codes = tokenizer(codes, return_tensors='pt', padding=True, truncation=True, max_length=5120)
 
 # Initialize GATModel and GraphAttentionV2
@@ -38,7 +48,7 @@ optimizer = Adam(list(encoder.parameters()) + list(decoder.parameters()) + list(
 loss_fn = torch.nn.MSELoss()
 
 # Example training loop
-num_epochs = 1
+num_epochs = 5
 
 for epoch in range(num_epochs):
     for batch in data_loader:
@@ -68,7 +78,7 @@ for epoch in range(num_epochs):
         attn_weights = attn_weights.unsqueeze(-1)  # Add the third dimension for broadcasting
         print(f"Reshaped Attention Weights Shape: {attn_weights.shape}")  # Should be [batch_size, seq_len, 1]
         # Apply attention weights
-        weighted_embeddings = attn_weights * combined_embeddings  # Apply attention weights
+        weighted_embeddings = attn_weights * sequence_embeddings  # Apply attention weights
         print(f"Weighted Embeddings Shape: {weighted_embeddings.shape}")
 
         # Step 4: Forward pass through the CodeT5 encoder
@@ -79,15 +89,12 @@ for epoch in range(num_epochs):
         encoder_input_ids = tokenized_codes["input_ids"]  # Assuming you have tokenized_codes from the collate_fn
         # Decode the original input token IDs to text (before embedding conversion)
         encoder_text = tokenizer.batch_decode(encoder_input_ids, skip_special_tokens=True)
-        print(f"Encoder Text Output: {encoder_text}")      
+        print(f"Encoder Text Output: {encoder_text}")
 
         # Step 5: Prepare inputs for the decoder
         batch_size, seq_len, _ = encoder_outputs.last_hidden_state.size()
         decoder_input_ids = torch.zeros(batch_size, seq_len, dtype=torch.long)  # Initialize decoder input IDs
         decoder_attention_mask = torch.ones(batch_size, seq_len, dtype=torch.long)  # Binary mask
-
-        #print(f"Combined Embeddings (sample): {combined_embeddings[0, :10, :].cpu().detach().numpy()}")
-        print(f"Encoder Outputs (sample): {encoder_outputs.last_hidden_state[0, :10, :].cpu().detach().numpy()}")
 
         # Step 6: Forward pass through the CodeT5 decoder
         decoder_outputs = decoder(
@@ -104,7 +111,7 @@ for epoch in range(num_epochs):
         # Decode the token IDs to readable text
         decoder_text = tokenizer.batch_decode(decoder_token_ids, skip_special_tokens=True)
         print(f"Decoder Text Output: {decoder_text}")
-       
+
         # Step 7: Compute logits and loss
         logits = decoder_outputs.last_hidden_state
         print(f"Logits Shape: {logits.shape}")
@@ -123,3 +130,4 @@ for epoch in range(num_epochs):
         optimizer.step()
 
         print(f"Epoch {epoch}, Loss: {loss.item()}")
+

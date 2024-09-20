@@ -2,9 +2,11 @@ import torch
 from torch import nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
-from transformers import RobertaTokenizer, RobertaModel
+from transformers import RobertaTokenizer, RobertaModel, RobertaConfig
 from experiment.utils import get_graph_dfg_data
 from torch_geometric.data import Data
+
+import os
 
 # Define dataset structure
 class CodeDataset(torch.utils.data.Dataset):
@@ -13,68 +15,39 @@ class CodeDataset(torch.utils.data.Dataset):
         self.tokenizer = tokenizer
         self.embedding_model = embedding_model
         self.lang = lang
-        self.data = self.load_data_from_file(filepath)
+        self.data = self.load_data_from_directory(filepath)
 
-    def load_data_from_file(self, filepath):
-        with open(filepath, 'r') as f:
-            data = []
-            code_snippet = ''  # The entire code, including the vulnerable part
-            fix_snippet = ''   # The entire code, including the fix part but excluding <vul> part
-            vul_snippet = ''   # The vulnerable code part
-            reading_vulnerability = False
-            reading_fix = False
-            fix_started = False  # To track if we have entered the <fix> section
-            post_fix_part = False  # To track if we're after the </fix> section
 
-            for line in f:
-                if '<vul/>' in line:
-                    # Start of vulnerability section
-                    reading_vulnerability = True
-                    code_snippet += line  # Add <vul> tag and its content to the main code snippet
-                    vul_snippet = ''  # Reset vulnerability snippet
-                elif '</vul>' in line:
-                    # End of vulnerability section
-                    reading_vulnerability = False
-                    code_snippet += line  # Add </vul> tag to the main code snippet
-                    vul_snippet += line.strip()  # Finalize vul_snippet
-                elif '<fix/>' in line:
-                    # Start of fix section
-                    reading_fix = True
-                    fix_started = True
-                    fix_snippet += line  # Start fix_snippet here (fix section begins)
-                elif '</fix>' in line:
-                    # End of fix section
-                    reading_fix = False
-                    post_fix_part = True  # We are now after the fix section
-                    fix_snippet += line.strip()  # End fix_snippet at the end of the fix section
-                else:
-                    # Normal lines outside of vulnerability and fix sections
-                    if reading_vulnerability:
-                        vul_snippet += line  # Add to vulnerability snippet
-                        code_snippet += line  # Add to the main code as well
-                    elif reading_fix:
-                        fix_snippet += line  # Add to fix snippet only
-                    else:
-                        # General code outside both sections, add to both code_snippet and fix_snippet
-                        code_snippet += line
-                        if fix_started and post_fix_part:
-                            # After </fix>, continue adding to fix_snippet
-                            fix_snippet += line
-                        elif not fix_started:
-                            # Add to fix_snippet before <fix/>
-                            fix_snippet += line
+    def load_data_from_directory(self, filepath):
+        data = []
 
-            # Append the final code, vul, and fix snippets
-            if code_snippet or fix_snippet or vul_snippet:
-                data.append({
-                    "code": code_snippet.strip(),        # Complete code, including vulnerable part
-                    "vul_snippet": vul_snippet.strip(),  # Vulnerability code section
-                    "fix": fix_snippet.strip()           # Complete fix snippet, including all code except the vulnerable part
-                })
+        # Get a list of all files in the directory and sort them
+        files = sorted(os.listdir(filepath))
 
+        # Filter the files to separate beforeFix and postFix
+        before_fix_files = [f for f in files if 'beforeFix' in f]
+        post_fix_files = [f for f in files if 'postFix' in f]
+
+        # Debugging: Print the found files
+        print(f"BeforeFix files: {before_fix_files}")
+        print(f"PostFix files: {post_fix_files}")
+
+        # Ensure there's a corresponding PostFix file for each BeforeFix file
+        for before_file, post_file in zip(before_fix_files, post_fix_files):
+            # Read the BeforeFix file (code_snippet)
+            with open(os.path.join(filepath, before_file), 'r') as before_fix_file:
+                before_fix_content = before_fix_file.read()
+
+            # Read the PostFix file (fix_snippet)
+            with open(os.path.join(filepath, post_file), 'r') as post_fix_file:
+                post_fix_content = post_fix_file.read()
+
+            # Append to the data list
+            data.append({
+                "code": before_fix_content.strip(),  # The code before the fix (code_snippet)
+                "fix": post_fix_content.strip()      # The code after the fix (fix_snippet)
+            })
         return data
-
-
 
     def __len__(self):
         return len(self.data)
@@ -97,8 +70,9 @@ def collate_fn(batch):
     assert isinstance(fixes, list) and all(isinstance(fix, str) for fix in fixes), "Fixes must be a list of strings"
 
     # Continue with tokenization and further processing
-    tokenized_codes = tokenizer(codes, return_tensors='pt', truncation=True, padding=True, max_length=512)
-    tokenized_fixes = tokenizer(fixes, return_tensors='pt', truncation=True, padding=True, max_length=512)
+    max_length = 4096  # Increase the max_length from 512 to something larger
+    tokenized_codes = tokenizer(codes, return_tensors='pt', truncation=True, padding=True, max_length=max_length)
+    tokenized_fixes = tokenizer(fixes, return_tensors='pt', truncation=True, padding=True, max_length=max_length)
 
     # Generate embeddings and process graph embeddings
     with torch.no_grad():
@@ -130,12 +104,14 @@ def collate_fn(batch):
 
 
 # Initialize tokenizer and embedding model
-tokenizer = RobertaTokenizer.from_pretrained("Salesforce/codet5-base")
-embedding_model = RobertaModel.from_pretrained("Salesforce/codet5-base")
+config = RobertaConfig.from_pretrained("Salesforce/codet5-base")
+config.max_position_embeddings = 5120  # Increase max position embeddings
+embedding_model = RobertaModel.from_pretrained("Salesforce/codet5-base", config=config)
+tokenizer = RobertaTokenizer.from_pretrained("Salesforce/codet5-base", config=config)
 
 # File containing code snippets with vulnerability tags and corresponding labels
-code_file = '/content/graphLLM4VulRepair/experiment/resources/test_code.py'
+filepath = ("data/processed_data/command_injection/train/code")
 
 # Create the dataset and DataLoader
-dataset = CodeDataset(code_file, tokenizer, embedding_model)
+dataset = CodeDataset(filepath, tokenizer, embedding_model)
 data_loader = DataLoader(dataset, batch_size=2, collate_fn=collate_fn, shuffle=True)
