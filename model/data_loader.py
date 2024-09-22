@@ -73,6 +73,8 @@ def collate_fn(batch):
     max_length = 4096  # Increase the max_length from 512 to something larger
     tokenized_codes = tokenizer(codes, return_tensors='pt', truncation=True, padding=True, max_length=max_length)
     tokenized_fixes = tokenizer(fixes, return_tensors='pt', truncation=True, padding=True, max_length=max_length)
+    code_token_ids = tokenized_codes['input_ids']
+    fix_token_ids = tokenized_fixes['input_ids']
 
     # Generate embeddings and process graph embeddings
     with torch.no_grad():
@@ -100,7 +102,7 @@ def collate_fn(batch):
             padded_graphs.append(graph)
 
 
-    return codes, fixes, padded_graphs, sequence_embeddings, fix_embeddings
+    return code_token_ids, fix_token_ids, codes, fixes, padded_graphs, sequence_embeddings, fix_embeddings
 
 
 # Initialize tokenizer and embedding model
@@ -110,7 +112,7 @@ embedding_model = RobertaModel.from_pretrained("Salesforce/codet5-base", config=
 tokenizer = RobertaTokenizer.from_pretrained("Salesforce/codet5-base", config=config)
 
 # File containing code snippets with vulnerability tags and corresponding labels
-filepath = ("data/processed_data/command_injection/train/code")
+filepath = ("/Users/stefanbehfar/Documents/Projects/attentionLLM4VulRepair/data/processed_data/command_injection/train/code")
 
 # Create the dataset and DataLoader
 dataset = CodeDataset(filepath, tokenizer, embedding_model)

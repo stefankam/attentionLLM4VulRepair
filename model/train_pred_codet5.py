@@ -1,5 +1,6 @@
 import torch
 from torch import nn
+from torch.optim import Adam
 from transformers import T5ForConditionalGeneration, T5Config, T5Tokenizer
 from model.data_loader import data_loader
 from model.GAT_model import GATModel
@@ -19,12 +20,12 @@ config, model, tokenizer = build_or_load_gen_model(args)
 
 encoder = T5ForConditionalGeneration.from_pretrained("Salesforce/codet5-base").encoder
 
+
 class modifiedSeq2Seq():
-    def __init__(self, encoder_output, decoder, labels, config, beam_size=None, max_length=None, sos_id=None, eos_id=None):
+    def __init__(self, encoder_output, decoder,  config, beam_size=None, max_length=None, sos_id=None, eos_id=None):
         self.encoder = encoder
         self.decoder = decoder
         self.config = config
-        self.labels = labels
         self.dense = nn.Linear(config.hidden_size, config.hidden_size)
         self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
         self.lsm = nn.LogSoftmax(dim=-1)
@@ -131,11 +132,20 @@ def main():
             decoder_layer = nn.TransformerDecoderLayer(d_model=config.hidden_size, nhead=config.num_attention_heads)
             decoder = nn.TransformerDecoder(decoder_layer, num_layers=6)
             labels = torch.mean(fix_embeddings, dim=1)  # Averaging fix embeddings as the label
-            loss = modifiedSeq2Seq(encoder_output=encoder_output, decoder=decoder, labels=labels, config=config,
+            loss = modifiedSeq2Seq(encoder_output=encoder_output, decoder=decoder, config=config,
                             beam_size=args.beam_size, max_length=args.max_target_length,
                             sos_id=tokenizer.cls_token_id, eos_id=tokenizer.sep_token_id)
 
             print(f"Epoch {epoch}, Loss: {loss.item()}")
+
+            # Define optimizer and loss function
+            optimizer = Adam(list(encoder.parameters()) + list(decoder.parameters()) + list(decoder_layer.parameters()),
+                             lr=1e-4)
+            # Backpropagation and optimization step
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+
 
 
 

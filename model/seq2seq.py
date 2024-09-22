@@ -1,15 +1,9 @@
-import torch
 import torch.nn as nn
-import numpy as np
 from transformers import (RobertaConfig, RobertaModel, RobertaTokenizer,
                           BartConfig, BartForConditionalGeneration, BartTokenizer,
                           T5Config, T5ForConditionalGeneration, T5Tokenizer)
-import logging
-import random
 import torch
 import logging
-import multiprocessing
-import numpy as np
 
 logger = logging.getLogger(__name__)
 
@@ -322,13 +316,13 @@ class Seq2Seq(nn.Module):
         self._tie_or_clone_weights(self.lm_head,
                                    self.encoder.embeddings.word_embeddings)
 
-    def forward(self, source_ids=None, source_mask=None, target_ids=None, target_mask=None, args=None):
-        outputs = self.encoder(source_ids, attention_mask=source_mask)
-        encoder_output = outputs[0].permute([1, 0, 2]).contiguous()
+    def forward(self, model, graphs, sequence_embeddings, source_ids, source_mask, target_ids=None, target_mask=None):
+        outputs = self.encoder(graphs, sequence_embeddings)
+        encoder_outputs = outputs[0].permute([1, 0, 2]).contiguous()
         if target_ids is not None:
             attn_mask = -1e4 * (1 - self.bias[:target_ids.shape[1], :target_ids.shape[1]])
             tgt_embeddings = self.encoder.embeddings(target_ids).permute([1, 0, 2]).contiguous()
-            out = self.decoder(tgt_embeddings, encoder_output, tgt_mask=attn_mask,
+            out = self.decoder(tgt_embeddings, encoder_outputs, tgt_mask=attn_mask,
                                memory_key_padding_mask=~source_mask)
             # memory_key_padding_mask=(1 - source_mask).bool())
             hidden_states = torch.tanh(self.dense(out)).permute([1, 0, 2]).contiguous()
@@ -345,44 +339,54 @@ class Seq2Seq(nn.Module):
             outputs = loss, loss * active_loss.sum(), active_loss.sum()
             return outputs
         else:
-            # Predict
-            preds = []
-            zero = torch.cuda.LongTensor(1).fill_(0)
-            for i in range(source_ids.shape[0]):
-                context = encoder_output[:, i:i + 1]
-                context_mask = source_mask[i:i + 1, :]
-                beam = Beam(self.beam_size, self.sos_id, self.eos_id)
-                input_ids = beam.getCurrentState()
-                context = context.repeat(1, self.beam_size, 1)
-                context_mask = context_mask.repeat(self.beam_size, 1)
-                for _ in range(self.max_length):
-                    if beam.done():
-                        break
-                    attn_mask = -1e4 * (1 - self.bias[:input_ids.shape[1], :input_ids.shape[1]])
-                    tgt_embeddings = self.encoder.embeddings(input_ids).permute([1, 0, 2]).contiguous()
-                    out = self.decoder(tgt_embeddings, context, tgt_mask=attn_mask,
-                                       memory_key_padding_mask=~context_mask)
-                    # memory_key_padding_mask=(1 - context_mask).bool())
-                    out = torch.tanh(self.dense(out))
-                    hidden_states = out.permute([1, 0, 2]).contiguous()[:, -1, :]
-                    out = self.lsm(self.lm_head(hidden_states)).data
-                    beam.advance(out)
-                    input_ids.data.copy_(input_ids.data.index_select(0, beam.getCurrentOrigin()))
-                    input_ids = torch.cat((input_ids, beam.getCurrentState()), -1)
-                hyp = beam.getHyp(beam.getFinal())
-                pred = beam.buildTargetTokens(hyp)[:self.beam_size]
-                pred = [torch.cat([x.view(-1) for x in p] + [zero] * (self.max_length - len(p))).view(1, -1) for p in
-                        pred]
-                preds.append(torch.cat(pred, 0).unsqueeze(0))
+            # Prediction loop
 
-            preds = torch.cat(preds, 0)
-            return preds
+            with torch.no_grad():
+                preds = []
+
+                # Ensure the model is in evaluation mode
+                #model.eval()
+
+                # Process each instance individually
+                for i in range(source_ids.shape[0]):
+                    input_id = source_ids[i:i + 1]  # Get a single input
+                    source_mask = source_mask[i:i + 1]  # Get the corresponding mask
+
+                    # Start autoregressive generation
+                    for _ in range(5):
+                        output = model.generate(
+                            input_ids=input_id,
+                            attention_mask=source_mask,
+                            max_length=self.max_length,
+                            num_beams=self.beam_size,
+                            early_stopping=False,
+                            do_sample=False,  # Set to True for sampling
+                            return_dict_in_generate=True,
+                            output_scores=True
+                        )
+
+                        # Get the logits for the last token and extract the predicted token
+                        logits = output.sequences[:, -1]  # Get the last generated token
+                        next_token = logits[-1].unsqueeze(0)  # Shape: [1, 1]
+
+                        # Append the predicted token to the generated sequence
+                        generated_sequence = torch.cat((generated_sequence, next_token.unsqueeze(0)), dim=1)
+                        print("generated_sequence:", generated_sequence)
+                        # Print the current output at each step
+                        print(f"Step {_ + 1}: {next_token}")
+
+                    preds.append(generated_sequence)
+
+                # Concatenate all predictions
+                preds_batch = torch.cat(preds, 0)
+
+            return preds_batch
 
 
 class Beam(object):
     def __init__(self, size, sos, eos):
         self.size = size
-        self.tt = torch.cuda
+        self.tt = torch # Changed from CUDA to CPU
         # The score for each translation on the beam.
         self.scores = self.tt.FloatTensor(size).zero_()
         # The backpointers at each time-step.

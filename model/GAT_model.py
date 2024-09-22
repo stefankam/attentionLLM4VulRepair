@@ -1,5 +1,6 @@
 import torch
 from torch_geometric.nn import GATConv
+from torch_geometric.data import Data
 
 
 class GATModel(torch.nn.Module):
