@@ -1,5 +1,4 @@
 import torch
-from torch import nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from transformers import RobertaTokenizer, RobertaModel, RobertaConfig
@@ -59,7 +58,7 @@ class CodeDataset(torch.utils.data.Dataset):
         return code_snippet, fix_snippet, graph_data,
 
 
-def collate_fn(batch):
+def collate_fn(batch, tokenizer, embedding_model, max_length):
     # Ensure the structure of each item in the batch is unpacked properly
     codes = [item[0] for item in batch]  # Assuming item[0] is the code snippet as a string
     fixes = [item[1] for item in batch]  # Assuming item[1] is the fix snippet as a string
@@ -69,10 +68,11 @@ def collate_fn(batch):
     assert isinstance(codes, list) and all(isinstance(code, str) for code in codes), "Codes must be a list of strings"
     assert isinstance(fixes, list) and all(isinstance(fix, str) for fix in fixes), "Fixes must be a list of strings"
 
-    # Continue with tokenization and further processing
-    max_length = 4096  # Increase the max_length from 512 to something larger
+    # Continue with tokenization and further processing 
     tokenized_codes = tokenizer(codes, return_tensors='pt', truncation=True, padding=True, max_length=max_length)
     tokenized_fixes = tokenizer(fixes, return_tensors='pt', truncation=True, padding=True, max_length=max_length)
+    code_token_ids = tokenized_codes['input_ids']
+    fix_token_ids = tokenized_fixes['input_ids']
 
     # Generate embeddings and process graph embeddings
     with torch.no_grad():
@@ -100,18 +100,22 @@ def collate_fn(batch):
             padded_graphs.append(graph)
 
 
-    return codes, fixes, padded_graphs, sequence_embeddings, fix_embeddings
+    return code_token_ids, fix_token_ids, codes, fixes, padded_graphs, sequence_embeddings, fix_embeddings
 
 
-# Initialize tokenizer and embedding model
-config = RobertaConfig.from_pretrained("Salesforce/codet5-base")
-config.max_position_embeddings = 5120  # Increase max position embeddings
-embedding_model = RobertaModel.from_pretrained("Salesforce/codet5-base", config=config)
-tokenizer = RobertaTokenizer.from_pretrained("Salesforce/codet5-base", config=config)
+def get_dataload(device, max_length, batch_size=2, vulnerability='command_injection'):
+    config = RobertaConfig.from_pretrained("Salesforce/codet5-base")
+    config.max_position_embeddings = max_length  # Increase max position embeddings
+    embedding_model = RobertaModel.from_pretrained("Salesforce/codet5-base", config=config).to(device)
+    tokenizer = RobertaTokenizer.from_pretrained("Salesforce/codet5-base", config=config)
 
-# File containing code snippets with vulnerability tags and corresponding labels
-filepath = ("data/processed_data/command_injection/train/code")
+    # File containing code snippets with vulnerability tags and corresponding labels
+    filepath = ("data/processed_data/{}/train/code".format(vulnerability))
 
-# Create the dataset and DataLoader
-dataset = CodeDataset(filepath, tokenizer, embedding_model)
-data_loader = DataLoader(dataset, batch_size=2, collate_fn=collate_fn, shuffle=True)
+    # Create the dataset and DataLoader
+    dataset = CodeDataset(filepath, tokenizer, embedding_model)
+    data_loader = DataLoader(dataset, batch_size=batch_size,
+                             collate_fn= lambda b: collate_fn(b, tokenizer, embedding_model, max_length),
+                             shuffle=True,
+                             generator=torch.Generator(device=device))
+    return data_loader

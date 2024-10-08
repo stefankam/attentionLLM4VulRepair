@@ -2,3 +2,13 @@
 */__pycache__/
 */.pytest_cache/
 parser/tree-sitter-*/
+data/processed_data/*
+model/pretrained_model/*
+*.pyc
+bin/
+lib/
+*.DS_Store
+.vscode/
+share/
+lib64/
+pyvenv.cfg

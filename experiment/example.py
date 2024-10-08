@@ -14,9 +14,6 @@ dfg_function = {
     'java': DFG_java,
 }
 
-
-max_target_length = 512
-max_source_length = 512
 out_channels = 768  # Same dimension as CodeBERT embeddings
 in_channels = 768
 num_heads = 8

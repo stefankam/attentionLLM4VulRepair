@@ -29,13 +29,11 @@ def build_graph(dfg, code_tokens, dfg_to_code, tokenizer=None, model=None):
 
 
 def get_graph_dfg_data(code, model, tokenizer, lang='python'):
-    max_target_length = 512
-    max_source_length = 512
     path = parser.__path__[0]
     LANGUAGE = Language(path + "/my-languages.so", 'python')
     code_parser = Parser()
     code_parser.set_language(LANGUAGE)
-    code_parser.set_language(LANGUAGE)
+
     code_parser = [code_parser, dfg_function[lang]]
     raw_code_tokens, dfg = DFG_getter.get_data_flow(code, code_parser)
 
@@ -48,7 +46,7 @@ def get_graph_dfg_data(code, model, tokenizer, lang='python'):
         ori2cur_pos[i] = (ori2cur_pos[i - 1][1], ori2cur_pos[i - 1][1] + len(code_tokens[i]))
     # flat all tokens into one
     code_tokens = [y for x in code_tokens for y in x]
-    code_tokens = [tokenizer.cls_token] + code_tokens + [tokenizer.eos_token]
+    code_tokens = [tokenizer.bos_token] + code_tokens + [tokenizer.eos_token]
     tokens_ids = tokenizer.convert_tokens_to_ids(code_tokens)
     sequence_embeddings = model(torch.tensor(tokens_ids)[None, :])[0]
 
