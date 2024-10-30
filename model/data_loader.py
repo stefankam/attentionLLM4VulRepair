@@ -103,14 +103,14 @@ def collate_fn(batch, tokenizer, embedding_model, max_length):
     return code_token_ids, fix_token_ids, codes, fixes, padded_graphs, sequence_embeddings, fix_embeddings
 
 
-def get_dataload(device, max_length, batch_size=2, vulnerability='command_injection'):
+def get_dataload(device, max_length, batch_size=2, vulnerability='command_injection', loader_type='train'):
     config = RobertaConfig.from_pretrained("Salesforce/codet5-base")
     config.max_position_embeddings = max_length  # Increase max position embeddings
     embedding_model = RobertaModel.from_pretrained("Salesforce/codet5-base", config=config).to(device)
     tokenizer = RobertaTokenizer.from_pretrained("Salesforce/codet5-base", config=config)
 
     # File containing code snippets with vulnerability tags and corresponding labels
-    filepath = ("data/processed_data/{}/train/code".format(vulnerability))
+    filepath = ("data/processed_data/{}/{}/code".format(vulnerability, loader_type))
 
     # Create the dataset and DataLoader
     dataset = CodeDataset(filepath, tokenizer, embedding_model)

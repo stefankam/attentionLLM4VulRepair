@@ -4,6 +4,7 @@ from torch.optim import Adam
 from transformers import RobertaTokenizer, RobertaModel, RobertaConfig, T5ForConditionalGeneration, T5Config
 
 from graph_augmented_transformer import GraphAugmentedEncoder
+from model.utils import print_metrics
 from seq2seq import Seq2Seq
 from GAT_model import GATModel
 from model.data_loader import get_dataload
@@ -17,7 +18,7 @@ max_embeddings_position = 2048
 max_target_length = 256
 
 
-data_loader = get_dataload(device, vulnerability = vulnerability, batch_size=batch_size, max_length=max_embeddings_position)
+train_data_loader = get_dataload(device, vulnerability = vulnerability, batch_size=batch_size, max_length=max_embeddings_position)
 model_path = 'model/pretrained_model/s2s/{}'.format(vulnerability)
 
 # Initialize tokenizer and models
@@ -68,8 +69,10 @@ optimizer = Adam(list(encoder.parameters()) + list(decoder.parameters()), lr=1e-
 # Example training loop
 num_epochs = 200
 
+evaluation_after_training = True
+
 for epoch in range(num_epochs):
-    for batch in data_loader:
+    for batch in train_data_loader:
         # Unpack batch data
         code_token_ids, fix_token_ids, codes, fixes, graphs, sequence_embeddings, fix_embeddings = batch
         code_token_ids = code_token_ids
@@ -103,5 +106,25 @@ for epoch in range(num_epochs):
 
 
         print(f"Epoch {epoch}, Loss: {loss.item()}")
+
+if evaluation_after_training:
+    # Save the model
+    test_data_loader = get_dataload(device, vulnerability=vulnerability, loader_type='test')
+    references = []
+    predictions = []
+    for batch in test_data_loader:
+        code_token_ids, fix_token_ids, codes, fixes, graphs, sequence_embeddings, fix_embeddings = batch
+        source_mask = code_token_ids.ne(tokenizer.pad_token_id)
+        target_mask = fix_token_ids.ne(tokenizer.pad_token_id)
+        with torch.no_grad():
+            preds = s2s_model(graphs, sequence_embeddings,
+                              source_ids=code_token_ids,
+                              source_mask=source_mask)
+            for pred in preds:
+                text = tokenizer.decode(pred[0], clean_up_tokenization_spaces=False)
+                predictions.append(text)
+            for fix in fixes:
+                references.append(fix)
+    print_metrics(references, predictions, lang='python')
 
 torch.save(s2s_model, model_path)

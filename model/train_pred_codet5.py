@@ -11,7 +11,6 @@ import argparse
 in_channels = 768
 out_channels = 768
 
-
 # Parser
 parser = argparse.ArgumentParser()
 args = add_args(parser)
@@ -19,8 +18,10 @@ config, model, tokenizer = build_or_load_gen_model(args)
 
 encoder = T5ForConditionalGeneration.from_pretrained("Salesforce/codet5-base").encoder
 
+
 class modifiedSeq2Seq():
-    def __init__(self, encoder_output, decoder, labels, config, beam_size=None, max_length=None, sos_id=None, eos_id=None):
+    def __init__(self, encoder_output, decoder, labels, config, beam_size=None, max_length=None, sos_id=None,
+                 eos_id=None):
         self.encoder = encoder
         self.decoder = decoder
         self.config = config
@@ -91,6 +92,7 @@ class modifiedSeq2Seq():
             preds = torch.cat(preds, 0)
             print("preds: ", preds)
 
+
 def main():
     # Training loop
     num_epochs = 5
@@ -132,11 +134,7 @@ def main():
             decoder = nn.TransformerDecoder(decoder_layer, num_layers=6)
             labels = torch.mean(fix_embeddings, dim=1)  # Averaging fix embeddings as the label
             loss = modifiedSeq2Seq(encoder_output=encoder_output, decoder=decoder, labels=labels, config=config,
-                            beam_size=args.beam_size, max_length=args.max_target_length,
-                            sos_id=tokenizer.cls_token_id, eos_id=tokenizer.sep_token_id)
+                                   beam_size=args.beam_size, max_length=args.max_target_length,
+                                   sos_id=tokenizer.cls_token_id, eos_id=tokenizer.sep_token_id)
 
             print(f"Epoch {epoch}, Loss: {loss.item()}")
-
-
-
-
