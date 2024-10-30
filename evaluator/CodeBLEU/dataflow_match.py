@@ -18,11 +18,11 @@ def calc_dataflow_match(references, candidate, lang):
 
 
 def corpus_dataflow_match(references, candidates, lang):
-    path = parser.dfg.__path__[0]
+    path = parser.__path__[0]
     LANGUAGE = Language(path + "/my-languages.so", lang)
-    parser = Parser()
-    parser.set_language(LANGUAGE)
-    parser = [parser, dfg_function[lang]]
+    lang_parser = Parser()
+    lang_parser.set_language(LANGUAGE)
+    lang_parser = [lang_parser, dfg_function[lang]]
     match_count = 0
     total_count = 0
 
@@ -39,8 +39,8 @@ def corpus_dataflow_match(references, candidates, lang):
             except:
                 pass
 
-            cand_dfg = get_data_flow(candidate, parser)
-            ref_dfg = get_data_flow(reference, parser)
+            _, cand_dfg = get_data_flow(candidate, lang_parser)
+            _, ref_dfg = get_data_flow(reference, lang_parser)
 
             normalized_cand_dfg = normalize_dataflow(cand_dfg)
             normalized_ref_dfg = normalize_dataflow(ref_dfg)

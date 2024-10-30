@@ -1,19 +1,13 @@
 # Copyright (c) Microsoft Corporation. 
 # Licensed under the MIT license.
 
-import evaluator
-from evaluator.CodeBLEU.parser import DFG_python, DFG_java, DFG_ruby, DFG_go, DFG_php, DFG_javascript, DFG_csharp
-from evaluator.CodeBLEU.parser import (remove_comments_and_docstrings)
+import parser
+from parser import DFG_python
+from parser import (remove_comments_and_docstrings)
 from tree_sitter import Language, Parser
 
 dfg_function = {
     'python': DFG_python,
-    'java': DFG_java,
-    'ruby': DFG_ruby,
-    'go': DFG_go,
-    'php': DFG_php,
-    'javascript': DFG_javascript,
-    'c_sharp': DFG_csharp,
 }
 
 
@@ -22,10 +16,10 @@ def calc_syntax_match(references, candidate, lang):
 
 
 def corpus_syntax_match(references, candidates, lang):
-    path = evaluator.CodeBLEU.parser.__path__[0]
+    path = parser.__path__[0]
     LANGUAGE = Language(path + "/my-languages.so", lang)
-    parser = Parser()
-    parser.set_language(LANGUAGE)
+    lang_parser = Parser()
+    lang_parser.set_language(LANGUAGE)
     match_count = 0
     total_count = 0
 
@@ -42,9 +36,9 @@ def corpus_syntax_match(references, candidates, lang):
             except:
                 pass
 
-            candidate_tree = parser.parse(bytes(candidate, 'utf8')).root_node
+            candidate_tree = lang_parser.parse(bytes(candidate, 'utf8')).root_node
 
-            reference_tree = parser.parse(bytes(reference, 'utf8')).root_node
+            reference_tree = lang_parser.parse(bytes(reference, 'utf8')).root_node
 
             def get_all_sub_trees(root_node):
                 node_stack = []
