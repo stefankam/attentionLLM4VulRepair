@@ -70,6 +70,7 @@ optimizer = Adam(list(encoder.parameters()) + list(decoder.parameters()), lr=1e-
 num_epochs = 200
 
 evaluation_after_training = True
+evaluation_with_valid_data = True
 
 for epoch in range(num_epochs):
     for batch in train_data_loader:
@@ -109,22 +110,29 @@ for epoch in range(num_epochs):
 
 if evaluation_after_training:
     # Save the model
-    test_data_loader = get_dataload(device, vulnerability=vulnerability, loader_type='test')
+    test_data_loader = get_dataload(device, vulnerability=vulnerability, loader_type='test',
+                                    max_length=max_target_length)
+    data_loads = [test_data_loader]
+    if evaluation_with_valid_data:
+        valid_data_loader = get_dataload(device, vulnerability=vulnerability, loader_type='valid',
+                                         max_length=max_target_length)
+        data_loads.append(valid_data_loader)
     references = []
     predictions = []
-    for batch in test_data_loader:
-        code_token_ids, fix_token_ids, codes, fixes, graphs, sequence_embeddings, fix_embeddings = batch
-        source_mask = code_token_ids.ne(tokenizer.pad_token_id)
-        target_mask = fix_token_ids.ne(tokenizer.pad_token_id)
-        with torch.no_grad():
-            preds = s2s_model(graphs, sequence_embeddings,
-                              source_ids=code_token_ids,
-                              source_mask=source_mask)
-            for pred in preds:
-                text = tokenizer.decode(pred[0], clean_up_tokenization_spaces=False)
-                predictions.append(text)
-            for fix in fixes:
-                references.append(fix)
-    print_metrics(references, predictions, lang='python')
+    for data_loader in data_loads:
+        for batch in data_loader:
+            code_token_ids, fix_token_ids, codes, fixes, graphs, sequence_embeddings, fix_embeddings = batch
+            source_mask = code_token_ids.ne(tokenizer.pad_token_id)
+            target_mask = fix_token_ids.ne(tokenizer.pad_token_id)
+            with torch.no_grad():
+                preds = s2s_model(graphs, sequence_embeddings,
+                                  source_ids=code_token_ids,
+                                  source_mask=source_mask)
+                for pred in preds:
+                    text = tokenizer.decode(pred[0], clean_up_tokenization_spaces=False)
+                    predictions.append(text)
+                for fix in fixes:
+                    references.append(fix)
+        print_metrics(references, predictions, lang='python')
 
 torch.save(s2s_model, model_path)
