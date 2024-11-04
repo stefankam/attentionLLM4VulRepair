@@ -48,6 +48,7 @@ def get_graph_dfg_data(code, model, tokenizer, lang='python'):
     code_tokens = [y for x in code_tokens for y in x]
     code_tokens = [tokenizer.bos_token] + code_tokens + [tokenizer.eos_token]
     tokens_ids = tokenizer.convert_tokens_to_ids(code_tokens)
+    print(len(tokens_ids))
     sequence_embeddings = model(torch.tensor(tokens_ids)[None, :])[0]
 
     reverse_index = {}

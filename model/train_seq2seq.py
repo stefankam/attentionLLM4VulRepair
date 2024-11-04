@@ -1,10 +1,11 @@
+import os
+
 import torch
 from torch import nn
 from torch.optim import Adam
 from transformers import RobertaTokenizer, RobertaModel, RobertaConfig, T5ForConditionalGeneration, T5Config
 
 from graph_augmented_transformer import GraphAugmentedEncoder
-from model.utils import print_metrics
 from seq2seq import Seq2Seq
 from GAT_model import GATModel
 from model.data_loader import get_dataload
@@ -19,7 +20,7 @@ max_target_length = 256
 
 
 train_data_loader = get_dataload(device, vulnerability = vulnerability, batch_size=batch_size, max_length=max_embeddings_position)
-model_path = 'model/pretrained_model/s2s/{}'.format(vulnerability)
+model_path = 'model/pretrained_model/s2s/{}/'.format(vulnerability)
 
 # Initialize tokenizer and models
 config = RobertaConfig.from_pretrained("Salesforce/codet5-base")
@@ -67,10 +68,13 @@ s2s_model = Seq2Seq(encoder=graph_encoder,
 optimizer = Adam(list(encoder.parameters()) + list(decoder.parameters()), lr=1e-4)
 
 # Example training loop
-num_epochs = 200
+num_epochs = 1
 
 evaluation_after_training = True
-evaluation_with_valid_data = True
+evaluation_with_valid_data = False
+evaluation_path = os.getcwd() + "/" + model_path + "output/"
+if not os.path.exists(evaluation_path):
+    os.makedirs(evaluation_path)
 
 for epoch in range(num_epochs):
     for batch in train_data_loader:
@@ -111,11 +115,11 @@ for epoch in range(num_epochs):
 if evaluation_after_training:
     # Save the model
     test_data_loader = get_dataload(device, vulnerability=vulnerability, loader_type='test',
-                                    max_length=max_target_length)
+                                    max_length=max_embeddings_position)
     data_loads = [test_data_loader]
     if evaluation_with_valid_data:
         valid_data_loader = get_dataload(device, vulnerability=vulnerability, loader_type='valid',
-                                         max_length=max_target_length)
+                                         max_length=max_embeddings_position)
         data_loads.append(valid_data_loader)
     references = []
     predictions = []
@@ -133,6 +137,11 @@ if evaluation_after_training:
                     predictions.append(text)
                 for fix in fixes:
                     references.append(fix)
-        print_metrics(references, predictions, lang='python')
 
-torch.save(s2s_model, model_path)
+    with (open(evaluation_path + "predictions.txt", 'w+') as f1,
+          open(evaluation_path + "reference.txt", 'w+') as f2) :
+        for pred in predictions:
+            f1.write("\t".join(pred.splitlines()))
+        for ref in references:
+            f2.write("\t".join(ref.splitlines()))
+torch.save(s2s_model, model_path + "model")
