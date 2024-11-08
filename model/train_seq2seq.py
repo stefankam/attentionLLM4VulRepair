@@ -9,6 +9,7 @@ from graph_augmented_transformer import GraphAugmentedEncoder
 from seq2seq import Seq2Seq
 from GAT_model import GATModel
 from model.data_loader import get_dataload
+import pickle
 
 device = 'cuda'
 torch.set_default_device(device)
@@ -137,6 +138,11 @@ if evaluation_after_training:
                     predictions.append(text)
                 for fix in fixes:
                     references.append(fix)
+
+    with (open(evaluation_path + "predictions", "wb") as f1,
+          open(evaluation_path + "reference", "wb") as f2):  # Pickling
+        pickle.dump(predictions, f1)
+        pickle.dump(references, f2)
 
     with (open(evaluation_path + "predictions.txt", 'w+') as f1,
           open(evaluation_path + "reference.txt", 'w+') as f2) :
