@@ -1,0 +1,34 @@
+import json
+import psycopg2
+from psycopg2.extensions import AsIs
+
+
+class PostgresNoSQLTable(object):
+
+    <fix/>SQL_INSERT_JSON = "INSERT INTO %s(data) VALUES(%s) RETURNING id"</fix>
+    SQL_QUERY_JSON = 'SELECT %s FROM %s WHERE %s'
+    SQL_GET_JSON = 'SELECT * FROM %s WHERE id=%s'
+
+    def __init__(self, name, connection):
+        self.name = name
+        self.connection = connection
+        self.cursor = self.connection.cursor()
+
+    def commit(self):
+        self.connection.commit()
+
+    def put(self, data):
+        <fix/>self.cursor.execute(self.SQL_INSERT_JSON, (AsIs(self.name), json.dumps(data)))</fix>
+        return self.cursor.fetchone()[0]
+
+    def get(self, id):
+        <fix/>self.cursor.execute(self.SQL_GET_JSON, (AsIs(self.name), id))</fix>
+        return self.cursor.fetchone()
+
+    def query(self, query='True', columns='*'):
+        <fix/>self.cursor.execute(self.SQL_QUERY_JSON, (AsIs(columns), AsIs(self.name), AsIs(query)))</fix>
+        rows = [item for item in self.cursor.fetchall()]
+        return rows
+
+    def drop(self):
+        raise Exception('not implemented yet!')
