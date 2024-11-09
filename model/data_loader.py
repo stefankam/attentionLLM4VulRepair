@@ -54,11 +54,24 @@ class CodeDataset(torch.utils.data.Dataset):
     def __getitem__(self, idx):
         code_snippet = self.data[idx]['code']
         fix_snippet = self.data[idx]['fix']
-        graph_data, _ = get_graph_dfg_data(code_snippet, self.embedding_model, self.tokenizer, lang=self.lang)
+        graph_result = get_graph_dfg_data(code_snippet, self.embedding_model, self.tokenizer, lang=self.lang)
+        if graph_result is None:
+            print("Warning: No graph data generated for this sample.")
+            return None  # Skip this sample in the dataset if no graph data
+        graph_data, _ = graph_result
+
         return code_snippet, fix_snippet, graph_data,
 
 
 def collate_fn(batch, tokenizer, embedding_model, max_length):
+    # Filter out None values from the batch list
+    batch = [item for item in batch if item is not None and len(item) == 3]
+ 
+    # Now you can safely unpack
+    batch = [(c, f, g) for c, f, g in batch if g is not None]
+
+    if not batch:  # Handle cases where the entire batch is filtered out
+        return None
     # Ensure the structure of each item in the batch is unpacked properly
     codes = [item[0] for item in batch]  # Assuming item[0] is the code snippet as a string
     fixes = [item[1] for item in batch]  # Assuming item[1] is the fix snippet as a string
@@ -118,4 +131,5 @@ def get_dataload(device, max_length, batch_size=2, vulnerability='command_inject
                              collate_fn= lambda b: collate_fn(b, tokenizer, embedding_model, max_length),
                              shuffle=True,
                              generator=torch.Generator(device=device))
+
     return data_loader

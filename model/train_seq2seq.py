@@ -13,10 +13,11 @@ import pickle
 
 device = 'cuda'
 torch.set_default_device(device)
-vulnerability = 'command_injection'
-# vulnerability = 'open_redirect'
+#vulnerability = 'command_injection'
+#vulnerability = 'open_redirect'
+vulnerability = 'xss'
 batch_size=1
-max_embeddings_position = 2048
+max_embeddings_position = 20000
 max_target_length = 256
 
 
@@ -69,7 +70,7 @@ s2s_model = Seq2Seq(encoder=graph_encoder,
 optimizer = Adam(list(encoder.parameters()) + list(decoder.parameters()), lr=1e-4)
 
 # Example training loop
-num_epochs = 1
+num_epochs = 100
 
 evaluation_after_training = True
 evaluation_with_valid_data = False
@@ -79,12 +80,17 @@ if not os.path.exists(evaluation_path):
 
 for epoch in range(num_epochs):
     for batch in train_data_loader:
+        if batch is None:
+            continue  # Skip batches that were returned as None from collate_fn
+
         # Unpack batch data
         code_token_ids, fix_token_ids, codes, fixes, graphs, sequence_embeddings, fix_embeddings = batch
         code_token_ids = code_token_ids
         fix_token_ids = fix_token_ids
         sequence_embeddings = sequence_embeddings
         fix_embeddings = fix_embeddings
+        # print(f"Batch shapes - code_token_ids: {code_token_ids.shape}, fix_token_ids: {fix_token_ids.shape}")
+        #print(f"Graphs: {[graph.x.shape for graph in graphs]}")
 
         # tokenized_codes = tokenizer(codes, return_tensors='pt', padding=True, truncation=True, max_length=5120)
         source_mask = code_token_ids.ne(tokenizer.pad_token_id)
@@ -126,6 +132,8 @@ if evaluation_after_training:
     predictions = []
     for data_loader in data_loads:
         for batch in data_loader:
+            if batch is None:
+                continue  # Skip batches that were returned as None from collate_fn
             code_token_ids, fix_token_ids, codes, fixes, graphs, sequence_embeddings, fix_embeddings = batch
             source_mask = code_token_ids.ne(tokenizer.pad_token_id)
             target_mask = fix_token_ids.ne(tokenizer.pad_token_id)

@@ -16,6 +16,7 @@ dfg_function = {
 def build_graph(dfg, code_tokens, dfg_to_code, tokenizer=None, model=None):
     edges = []
     data = []
+    
     for idx, x in enumerate(dfg):
         tokens_ids = tokenizer.convert_tokens_to_ids(code_tokens[dfg_to_code[idx][0]:dfg_to_code[idx][1]])
         # sum the embeddings of the tokens for each dfg nodes
@@ -24,6 +25,12 @@ def build_graph(dfg, code_tokens, dfg_to_code, tokenizer=None, model=None):
         for y in x[-1]:
             edges.append((y, idx))
     edge_index = torch.tensor(edges, dtype=torch.long).t().contiguous()
+
+    if len(data) == 0:
+        print("Debug: 'data' is empty in build_graph.")
+        #print(f"DFG: {dfg}, Code Tokens: {code_tokens}, DFG to Code mapping: {dfg_to_code}")
+        return None  # Skip or handle cases where data is empty
+
     x = torch.stack(data)
     return Data(x=x.squeeze(), edge_index=edge_index)
 
@@ -67,4 +74,9 @@ def get_graph_dfg_data(code, model, tokenizer, lang='python'):
     length = len([tokenizer.cls_token])
     dfg_to_code = [(x[0] + length, x[1] + length) for x in dfg_to_code]
     graph_data = build_graph(dfg, code_tokens, dfg_to_code, model=model, tokenizer=tokenizer)
+    # Check if graph_data is None and handle accordingly
+    if graph_data is None:
+        print("Warning: Empty graph data returned.")
+        return None  # Explicitly return None to indicate no graph data
+
     return graph_data, sequence_embeddings
