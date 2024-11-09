@@ -4,7 +4,7 @@ from data.process.utils import collect_codes_single_data
 
 raw_data_dir = "data/raw_data"
 output_dir = "data/processed_data"
-token = "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"
+token = ""
 
 max_vulnerability = 8
 
