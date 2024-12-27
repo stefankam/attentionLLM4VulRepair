@@ -1,5 +1,6 @@
 
 
+
 import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
@@ -136,8 +137,7 @@ def get_dataload(device, max_length, batch_size=2, vulnerability='command_inject
     # Create the dataset and DataLoader
     dataset = CodeDataset(filepath, tokenizer, embedding_model)
     data_loader = DataLoader(dataset, batch_size=batch_size,
-                             collate_fn=lambda b: collate_fn(b, tokenizer, embedding_model, max_length),
-                             shuffle=True, 
-                             generator=torch.Generator(device=device))
+                             collate_fn=lambda b: collate_fn(b, tokenizer, embedding_model, max_length, device),
+                             shuffle=True)
 
     return data_loader

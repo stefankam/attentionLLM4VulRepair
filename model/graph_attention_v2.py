@@ -7,11 +7,17 @@ class GraphAttentionV2(nn.Module):
         self.num_heads = num_heads
         self.multihead_attn = nn.MultiheadAttention(embed_dim, num_heads, batch_first=True, dropout=dropout)
 
-    def forward(self, sequence_embeddings, graph_embeddings, mask=None):
-        # sequence embeddings: [batch_size, sequence_len, embed_dim]
-        # graph embeddings: [batch_size, graph_size, embed_dim]
-        attn_output, attn_weights = self.multihead_attn(sequence_embeddings,
-                                                        graph_embeddings,
-                                                        graph_embeddings,
-                                                        key_padding_mask=mask)
+    def forward(self, sequence_embeddings, graph_embeddings):
+        # Ensure embeddings are on the same device as the model
+        device = next(self.parameters()).device
+        sequence_embeddings = sequence_embeddings.to(device)
+        graph_embeddings = graph_embeddings.to(device)
+
+        # Perform multihead attention
+        attn_output, attn_weights = self.multihead_attn(
+           sequence_embeddings,
+           graph_embeddings,
+           graph_embeddings
+        )
+
         return attn_output, attn_weights

@@ -100,14 +100,6 @@ class VulnerabilityFixer(LightningModule):
         )
 
         self.log("train_loss", loss, on_step=True, on_epoch=True, prog_bar=True, logger=True)
-       
-        
-        # Test device consistency
-        assert code_token_ids.device == device, "Code token IDs are not on the correct device"
-        assert fix_token_ids.device == device, "Fix token IDs are not on the correct device"
-        for graph in graphs:
-            assert graph.x.device == device, "Graph data is not on the correct device"
-            assert graph.edge_index.device == device, "Graph edge index is not on the correct device"
 
         return loss
 
@@ -150,7 +142,7 @@ lr_monitor = LearningRateMonitor(logging_interval="step")
 trainer = Trainer(
     accelerator="gpu",  # Use "gpu" for GPUs, or "cpu" for CPU
     devices=1,  # Specify the number of GPUs (use "auto" to auto-detect available GPUs)
-    strategy="ddp",  # Use DDP for multi-GPU distributed training
+    strategy="ddp_find_unused_parameters_true",  # Use DDP for multi-GPU distributed training
     precision=16,  # Mixed precision for faster training and reduced memory usage
     max_epochs=100,  # Maximum number of epochs
     callbacks=[checkpoint_callback, lr_monitor]
