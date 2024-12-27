@@ -292,7 +292,7 @@ class Seq2Seq(nn.Module):
         self.encoder = encoder.to(device)
         self.decoder = decoder.to(device)
         self.config = config
-        self.register_buffer("bias", torch.tril(torch.ones(9500, 9500)))
+        self.register_buffer("bias", torch.tril(torch.ones(10000, 10000)))
         self.dense = nn.Linear(config.hidden_size, config.hidden_size)
         self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
         self.lsm = nn.LogSoftmax(dim=-1)

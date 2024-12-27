@@ -1,6 +1,7 @@
 from torch import nn
 import torch
-
+import sys
+sys.path.append('/home/skb67/attentionLLM4VulRepair/')
 from model.graph_attention import GraphAttention
 import torch.nn.functional as F
 

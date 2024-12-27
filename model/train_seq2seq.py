@@ -1,161 +1,163 @@
-import os
 
+import os
 import torch
 from torch import nn
 from torch.optim import Adam
 from transformers import RobertaTokenizer, RobertaModel, RobertaConfig, T5ForConditionalGeneration, T5Config
+from pytorch_lightning import LightningModule, Trainer
+from pytorch_lightning.callbacks import ModelCheckpoint, LearningRateMonitor
+from pytorch_lightning.strategies import DDPStrategy
 
 from graph_augmented_transformer import GraphAugmentedEncoder
 from seq2seq import Seq2Seq
 from GAT_model import GATModel
 from model.data_loader import get_dataload
-import pickle
 
-device = 'cuda'
-torch.set_default_device(device)
-#vulnerability = 'command_injection'
-#vulnerability = 'open_redirect'
-vulnerability = 'xss'
-batch_size=1
+# Hyperparameters
+vulnerability = 'command_injection'
+batch_size = 1
 max_embeddings_position = 20000
 max_target_length = 256
+learning_rate = 1e-4
+num_epochs = 100
+beam_size = 4
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+# Data Loading
+train_data_loader = get_dataload(device,vulnerability=vulnerability, loader_type='train', batch_size=batch_size, max_length=max_embeddings_position)
 
-train_data_loader = get_dataload(device, vulnerability = vulnerability, batch_size=batch_size, max_length=max_embeddings_position)
-model_path = 'model/pretrained_model/s2s/{}/'.format(vulnerability)
+class VulnerabilityFixer(LightningModule):
+    def __init__(self, train_data_loader):
+        super().__init__()
+        self.train_data_loader = train_data_loader
 
-# Initialize tokenizer and models
-config = RobertaConfig.from_pretrained("Salesforce/codet5-base")
-config.max_position_embeddings = max_embeddings_position  # Increase max position embeddings
-embedding_model = RobertaModel.from_pretrained("Salesforce/codet5-base", config=config).to(device)
-tokenizer = RobertaTokenizer.from_pretrained("Salesforce/codet5-base", config=config)
+        # Tokenizer and Embedding Model
+        config = RobertaConfig.from_pretrained("Salesforce/codet5-base")
+        config.max_position_embeddings = max_embeddings_position
+        embedding_model = RobertaModel.from_pretrained("Salesforce/codet5-base", config=config).to(device)
+        self.tokenizer = RobertaTokenizer.from_pretrained("Salesforce/codet5-base", config=config)
 
-# Initialize graph and sequence models
-in_channels = 768
-out_channels = 768
+        # GAT Model
+        in_channels = 768
+        out_channels = 768
+        graph_model = GATModel(in_channels, out_channels)
 
-# Initialize GATModel
-graph_model = GATModel(in_channels, out_channels)
+        # CodeT5 Encoder and Decoder
+        codet5_model = T5ForConditionalGeneration.from_pretrained("Salesforce/codet5-base")
+        config = T5Config.from_pretrained("Salesforce/codet5-base")
+        encoder = codet5_model.encoder
 
-# Load CodeT5 decoder with appropriate configuration
-codet5_model = T5ForConditionalGeneration.from_pretrained("Salesforce/codet5-base").to(device)
-config = T5Config.from_pretrained("Salesforce/codet5-base")
-encoder = codet5_model.encoder
+        decoder_layer = nn.TransformerDecoderLayer(d_model=config.hidden_size, nhead=config.num_attention_heads)
+        decoder = nn.TransformerDecoder(decoder_layer, num_layers=6)
 
-decoder_layer = nn.TransformerDecoderLayer(d_model=config.hidden_size, nhead=config.num_attention_heads)
-decoder = nn.TransformerDecoder(decoder_layer, num_layers=6).to(device)
+        # Graph-Augmented Encoder
+        graph_encoder = GraphAugmentedEncoder(
+            encoder=encoder,
+            graph_model=graph_model,
+            embedding_model=embedding_model,
+            out_channels=out_channels
+        ).to(device)
 
-# Initialize GraphAugmentedEncoder
-graph_encoder = GraphAugmentedEncoder(
-    encoder=encoder,
-    graph_model=graph_model,  # Pass the graph model
-    embedding_model=embedding_model,
-    out_channels=out_channels
+        # Seq2Seq Model
+        self.s2s_model = Seq2Seq(
+            encoder=graph_encoder,
+            decoder=decoder,
+            config=config,
+            beam_size=beam_size,
+            max_length=max_target_length,
+            sos_id=self.tokenizer.bos_token_id,
+            eos_id=self.tokenizer.sep_token_id,
+            device=device
+        )
+
+        # Optimizer
+        self.optimizer = None
+
+    def forward(self, graphs, sequence_embeddings, source_ids, source_mask, target_ids=None, target_mask=None):
+        return self.s2s_model(
+            graphs,
+            sequence_embeddings,
+            source_ids=source_ids,
+            source_mask=source_mask,
+            target_ids=target_ids,
+            target_mask=target_mask
+        )
+
+    def training_step(self, batch, batch_idx):
+        # Unpack batch
+        code_token_ids, fix_token_ids, _, _, graphs, sequence_embeddings, _ = batch
+        source_mask = code_token_ids.ne(self.tokenizer.pad_token_id)
+        target_mask = fix_token_ids.ne(self.tokenizer.pad_token_id)
+
+        # Forward pass
+        loss, _, _ = self.forward(
+            graphs,
+            sequence_embeddings,
+            source_ids=code_token_ids,
+            source_mask=source_mask,
+            target_ids=fix_token_ids,
+            target_mask=target_mask
+        )
+
+        self.log("train_loss", loss, on_step=True, on_epoch=True, prog_bar=True, logger=True)
+       
+        
+        # Test device consistency
+        assert code_token_ids.device == device, "Code token IDs are not on the correct device"
+        assert fix_token_ids.device == device, "Fix token IDs are not on the correct device"
+        for graph in graphs:
+            assert graph.x.device == device, "Graph data is not on the correct device"
+            assert graph.edge_index.device == device, "Graph edge index is not on the correct device"
+
+        return loss
+
+    def configure_optimizers(self):
+        self.optimizer = Adam(self.parameters(), lr=learning_rate)
+        return self.optimizer
+
+    def predict_step(self, batch, batch_idx):
+        code_token_ids, _, _, _, graphs, sequence_embeddings, _ = batch
+        source_mask = code_token_ids.ne(self.tokenizer.pad_token_id)
+
+        # Generate predictions
+        preds = self.s2s_model(
+            graphs,
+            sequence_embeddings,
+            source_ids=code_token_ids,
+            source_mask=source_mask
+        )
+
+        # Decode predictions
+        decoded_preds = [
+            self.tokenizer.decode(pred[0], clean_up_tokenization_spaces=False) for pred in preds
+        ]
+        return decoded_preds
+
+    def train_dataloader(self):
+        return self.train_data_loader
+
+# Callbacks and Trainer
+checkpoint_callback = ModelCheckpoint(
+    monitor="train_loss",
+    save_top_k=1,
+    mode="min",
+    dirpath="checkpoints/",
+    filename="best-checkpoint"
 )
 
-beam_size = 4
-# Initialize Seq2Seq model
-config = T5Config.from_pretrained("Salesforce/codet5-base")
-s2s_model = Seq2Seq(encoder=graph_encoder,
-                    decoder=decoder,
-                    config=config,
-                    beam_size=beam_size,
-                    max_length=max_target_length,
-                    sos_id=tokenizer.bos_token_id,
-                    eos_id=tokenizer.sep_token_id,
-                    device=device)
+lr_monitor = LearningRateMonitor(logging_interval="step")
 
+trainer = Trainer(
+    accelerator="gpu",  # Use "gpu" for GPUs, or "cpu" for CPU
+    devices=1,  # Specify the number of GPUs (use "auto" to auto-detect available GPUs)
+    strategy="ddp",  # Use DDP for multi-GPU distributed training
+    precision=16,  # Mixed precision for faster training and reduced memory usage
+    max_epochs=100,  # Maximum number of epochs
+    callbacks=[checkpoint_callback, lr_monitor]
+)
 
-# Define optimizer and loss function
-optimizer = Adam(list(encoder.parameters()) + list(decoder.parameters()), lr=1e-4)
+# Model Training
+model = VulnerabilityFixer(train_data_loader)
+trainer.fit(model)
 
-# Example training loop
-num_epochs = 100
-
-evaluation_after_training = True
-evaluation_with_valid_data = False
-evaluation_path = os.getcwd() + "/" + model_path + "output/"
-if not os.path.exists(evaluation_path):
-    os.makedirs(evaluation_path)
-
-for epoch in range(num_epochs):
-    for batch in train_data_loader:
-        if batch is None:
-            continue  # Skip batches that were returned as None from collate_fn
-
-        # Unpack batch data
-        code_token_ids, fix_token_ids, codes, fixes, graphs, sequence_embeddings, fix_embeddings = batch
-        code_token_ids = code_token_ids
-        fix_token_ids = fix_token_ids
-        sequence_embeddings = sequence_embeddings
-        fix_embeddings = fix_embeddings
-        # print(f"Batch shapes - code_token_ids: {code_token_ids.shape}, fix_token_ids: {fix_token_ids.shape}")
-        #print(f"Graphs: {[graph.x.shape for graph in graphs]}")
-
-        # tokenized_codes = tokenizer(codes, return_tensors='pt', padding=True, truncation=True, max_length=5120)
-        source_mask = code_token_ids.ne(tokenizer.pad_token_id)
-        target_mask = fix_token_ids.ne(tokenizer.pad_token_id)
-        # Call Seq2Seq forward with all necessary inputs, including graphs and sequence_embeddings
-        loss, _, _ = s2s_model(graphs, sequence_embeddings,
-                               source_ids=code_token_ids,
-                               source_mask=source_mask,
-                               target_ids=fix_token_ids,
-                               target_mask=target_mask)
-        p = []
-        if epoch == num_epochs - 1:
-          with torch.no_grad():
-            preds = s2s_model(graphs, sequence_embeddings,
-                              source_ids = code_token_ids, source_mask = source_mask)
-            for pred in preds:
-              text = tokenizer.decode(pred[0],clean_up_tokenization_spaces=False)
-              p.append(text)
-          print("final decoder output: {}", p)
-
-        # Backpropagation and optimization step
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
-
-
-        print(f"Epoch {epoch}, Loss: {loss.item()}")
-
-if evaluation_after_training:
-    # Save the model
-    test_data_loader = get_dataload(device, vulnerability=vulnerability, loader_type='test',
-                                    max_length=max_embeddings_position)
-    data_loads = [test_data_loader]
-    if evaluation_with_valid_data:
-        valid_data_loader = get_dataload(device, vulnerability=vulnerability, loader_type='valid',
-                                         max_length=max_embeddings_position)
-        data_loads.append(valid_data_loader)
-    references = []
-    predictions = []
-    for data_loader in data_loads:
-        for batch in data_loader:
-            if batch is None:
-                continue  # Skip batches that were returned as None from collate_fn
-            code_token_ids, fix_token_ids, codes, fixes, graphs, sequence_embeddings, fix_embeddings = batch
-            source_mask = code_token_ids.ne(tokenizer.pad_token_id)
-            target_mask = fix_token_ids.ne(tokenizer.pad_token_id)
-            with torch.no_grad():
-                preds = s2s_model(graphs, sequence_embeddings,
-                                  source_ids=code_token_ids,
-                                  source_mask=source_mask)
-                for pred in preds:
-                    text = tokenizer.decode(pred[0], clean_up_tokenization_spaces=False)
-                    predictions.append(text)
-                for fix in fixes:
-                    references.append(fix)
-
-    with (open(evaluation_path + "predictions", "wb") as f1,
-          open(evaluation_path + "reference", "wb") as f2):  # Pickling
-        pickle.dump(predictions, f1)
-        pickle.dump(references, f2)
-
-    with (open(evaluation_path + "predictions.txt", 'w+') as f1,
-          open(evaluation_path + "reference.txt", 'w+') as f2) :
-        for pred in predictions:
-            f1.write("\t".join(pred.splitlines()))
-        for ref in references:
-            f2.write("\t".join(ref.splitlines()))
 torch.save(s2s_model, model_path + "model")

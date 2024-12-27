@@ -1,3 +1,5 @@
+
+
 import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
@@ -16,7 +18,6 @@ class CodeDataset(torch.utils.data.Dataset):
         self.lang = lang
         self.data = self.load_data_from_directory(filepath)
 
-
     def load_data_from_directory(self, filepath):
         data = []
 
@@ -26,7 +27,6 @@ class CodeDataset(torch.utils.data.Dataset):
         # Filter the files to separate beforeFix and postFix
         before_fix_files = [f for f in files if 'beforeFix' in f]
         post_fix_files = [f for f in files if 'postFix' in f]
-
         # Debugging: Print the found files
         print(f"BeforeFix files: {before_fix_files}")
         print(f"PostFix files: {post_fix_files}")
@@ -62,16 +62,13 @@ class CodeDataset(torch.utils.data.Dataset):
 
         return code_snippet, fix_snippet, graph_data,
 
-
-def collate_fn(batch, tokenizer, embedding_model, max_length):
+def collate_fn(batch, tokenizer, embedding_model, max_length, device):
     # Filter out None values from the batch list
     batch = [item for item in batch if item is not None and len(item) == 3]
  
-    # Now you can safely unpack
-    batch = [(c, f, g) for c, f, g in batch if g is not None]
-
     if not batch:  # Handle cases where the entire batch is filtered out
         return None
+
     # Ensure the structure of each item in the batch is unpacked properly
     codes = [item[0] for item in batch]  # Assuming item[0] is the code snippet as a string
     fixes = [item[1] for item in batch]  # Assuming item[1] is the fix snippet as a string
@@ -81,40 +78,51 @@ def collate_fn(batch, tokenizer, embedding_model, max_length):
     assert isinstance(codes, list) and all(isinstance(code, str) for code in codes), "Codes must be a list of strings"
     assert isinstance(fixes, list) and all(isinstance(fix, str) for fix in fixes), "Fixes must be a list of strings"
 
-    # Continue with tokenization and further processing 
+    # Tokenize code and fix snippets
     tokenized_codes = tokenizer(codes, return_tensors='pt', truncation=True, padding=True, max_length=max_length)
     tokenized_fixes = tokenizer(fixes, return_tensors='pt', truncation=True, padding=True, max_length=max_length)
-    code_token_ids = tokenized_codes['input_ids']
-    fix_token_ids = tokenized_fixes['input_ids']
 
-    # Generate embeddings and process graph embeddings
+    # Move tokenized tensors to the correct device
+    tokenized_codes = {key: value.to(device) for key, value in tokenized_codes.items()}
+    tokenized_fixes = {key: value.to(device) for key, value in tokenized_fixes.items()}
+
+    code_token_ids = tokenized_codes['input_ids'].to(device)
+    fix_token_ids = tokenized_fixes['input_ids'].to(device)
+
+    # Ensure the shapes of tokenized codes and fixes are consistent
+#    assert code_token_ids.size(1) == fix_token_ids.size(1), f"Code and fix token sizes don't match! {code_token_ids.size(1)} vs {fix_token_ids.size(1)}"
+
+    # Run the embedding model
     with torch.no_grad():
         code_outputs = embedding_model(**tokenized_codes)
         fix_outputs = embedding_model(**tokenized_fixes)
 
-    sequence_embeddings = code_outputs.last_hidden_state
-    fix_embeddings = fix_outputs.last_hidden_state
+    sequence_embeddings = code_outputs.last_hidden_state.to(device)
+    fix_embeddings = fix_outputs.last_hidden_state.to(device)
 
-    # Determine max size for padding
-    max_graph_size = max(graph.x.size(0) for graph in graphs)  # Assuming x is the node feature tensor
-
-    # Pad graph embeddings
+    # Handle graph data
+    max_graph_size = max(graph.x.size(0) for graph in graphs)
     padded_graphs = []
     for graph in graphs:
+        if graph.x.device != device:
+            print(f"Graph data not on {device}, moving now.")
+            graph.x = graph.x.to(device)
+            graph.edge_index = graph.edge_index.to(device)
+
         num_nodes = graph.x.size(0)
         if num_nodes < max_graph_size:
             padding_size = max_graph_size - num_nodes
-            # Pad node features
             padded_x = F.pad(graph.x, (0, 0, 0, padding_size), mode='constant', value=0)
-            # Pad edge_index
-            padded_edge_index = torch.cat([graph.edge_index, torch.zeros(2, padding_size).long()], dim=1)
-            padded_graphs.append(Data(x=padded_x, edge_index=padded_edge_index))
+            padded_edge_index = torch.cat([graph.edge_index, torch.zeros(2, padding_size).long().to(device)], dim=1)
+            padded_graphs.append(Data(x=padded_x.to(device), edge_index=padded_edge_index))
         else:
             padded_graphs.append(graph)
 
 
+    print(f"Embedding Model Device: {next(embedding_model.parameters()).device}")
+    print(f"Input IDs Device: {tokenized_codes['input_ids'].device}")
+    print(f"Attention Mask Device: {tokenized_codes['attention_mask'].device}")
     return code_token_ids, fix_token_ids, codes, fixes, padded_graphs, sequence_embeddings, fix_embeddings
-
 
 def get_dataload(device, max_length, batch_size=2, vulnerability='command_injection', loader_type='train'):
     config = RobertaConfig.from_pretrained("Salesforce/codet5-base")
@@ -123,13 +131,13 @@ def get_dataload(device, max_length, batch_size=2, vulnerability='command_inject
     tokenizer = RobertaTokenizer.from_pretrained("Salesforce/codet5-base", config=config)
 
     # File containing code snippets with vulnerability tags and corresponding labels
-    filepath = ("data/processed_data/{}/{}/code".format(vulnerability, loader_type))
+    filepath = ("/home/skb67/attentionLLM4VulRepair/data/processed_data/{}/{}/code".format(vulnerability, loader_type))
 
     # Create the dataset and DataLoader
     dataset = CodeDataset(filepath, tokenizer, embedding_model)
     data_loader = DataLoader(dataset, batch_size=batch_size,
-                             collate_fn= lambda b: collate_fn(b, tokenizer, embedding_model, max_length),
-                             shuffle=True,
+                             collate_fn=lambda b: collate_fn(b, tokenizer, embedding_model, max_length),
+                             shuffle=True, 
                              generator=torch.Generator(device=device))
 
     return data_loader

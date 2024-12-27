@@ -1,9 +1,17 @@
+
+
+
+
+
+
+
+
 import torch
 from torch_geometric.data import Data
 from parser import DFG_getter
 import parser
 from tree_sitter import Language, Parser
-
+import torch.nn.functional as F
 from parser import DFG_python
 from parser.DFG import DFG_java
 
@@ -20,7 +28,10 @@ def build_graph(dfg, code_tokens, dfg_to_code, tokenizer=None, model=None):
     for idx, x in enumerate(dfg):
         tokens_ids = tokenizer.convert_tokens_to_ids(code_tokens[dfg_to_code[idx][0]:dfg_to_code[idx][1]])
         # sum the embeddings of the tokens for each dfg nodes
-        context_embeddings = model(torch.tensor(tokens_ids)[None, :])[0].sum(dim=1)
+        device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+        model = model.to(device)
+        tokens_tensor = torch.tensor(tokens_ids).unsqueeze(0).to(device)
+        context_embeddings = model(tokens_tensor)[0]
         data.append(context_embeddings)
         for y in x[-1]:
             edges.append((y, idx))
@@ -31,7 +42,13 @@ def build_graph(dfg, code_tokens, dfg_to_code, tokenizer=None, model=None):
         #print(f"DFG: {dfg}, Code Tokens: {code_tokens}, DFG to Code mapping: {dfg_to_code}")
         return None  # Skip or handle cases where data is empty
 
-    x = torch.stack(data)
+    # Determine the maximum length
+    max_len = max(tensor.size(1) for tensor in data)
+
+    # Pad tensors to the maximum length
+    padded_data = [F.pad(tensor, (0, 0, 0, max_len - tensor.size(1))) for tensor in data]     
+   
+    x = torch.stack(padded_data)
     return Data(x=x.squeeze(), edge_index=edge_index)
 
 
@@ -56,7 +73,8 @@ def get_graph_dfg_data(code, model, tokenizer, lang='python'):
     code_tokens = [tokenizer.bos_token] + code_tokens + [tokenizer.eos_token]
     tokens_ids = tokenizer.convert_tokens_to_ids(code_tokens)
     print(len(tokens_ids))
-    sequence_embeddings = model(torch.tensor(tokens_ids)[None, :])[0]
+    device = next(model.parameters()).device  # Get the model's device
+    sequence_embeddings = model(torch.tensor(tokens_ids, device=device).unsqueeze(0))[0] 
 
     reverse_index = {}
     for idx, x in enumerate(dfg):
