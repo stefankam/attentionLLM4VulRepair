@@ -1,4 +1,5 @@
 
+
 import os
 import torch
 from torch import nn
@@ -19,12 +20,17 @@ batch_size = 1
 max_embeddings_position = 20000
 max_target_length = 256
 learning_rate = 1e-4
-num_epochs = 100
+num_epochs = 1
 beam_size = 4
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # Data Loading
 train_data_loader = get_dataload(device,vulnerability=vulnerability, loader_type='train', batch_size=batch_size, max_length=max_embeddings_position)
+
+# Define the model path
+model_path = 'model/pretrained_model/s2s/{}/'.format(vulnerability)
+if not os.path.exists(model_path):
+    os.makedirs(model_path)  # Ensure the directory exists
 
 class VulnerabilityFixer(LightningModule):
     def __init__(self, train_data_loader):
@@ -144,7 +150,7 @@ trainer = Trainer(
     devices=1,  # Specify the number of GPUs (use "auto" to auto-detect available GPUs)
     strategy="ddp_find_unused_parameters_true",  # Use DDP for multi-GPU distributed training
     precision=16,  # Mixed precision for faster training and reduced memory usage
-    max_epochs=100,  # Maximum number of epochs
+    max_epochs=1,  # Maximum number of epochs
     callbacks=[checkpoint_callback, lr_monitor]
 )
 
@@ -152,4 +158,4 @@ trainer = Trainer(
 model = VulnerabilityFixer(train_data_loader)
 trainer.fit(model)
 
-torch.save(s2s_model, model_path + "model")
+torch.save(model.state_dict(), model_path + "model")

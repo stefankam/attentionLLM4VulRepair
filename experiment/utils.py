@@ -1,11 +1,3 @@
-
-
-
-
-
-
-
-
 import torch
 from torch_geometric.data import Data
 from parser import DFG_getter
@@ -31,7 +23,7 @@ def build_graph(dfg, code_tokens, dfg_to_code, tokenizer=None, model=None):
         device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         model = model.to(device)
         tokens_tensor = torch.tensor(tokens_ids).unsqueeze(0).to(device)
-        context_embeddings = model(tokens_tensor)[0]
+        context_embeddings = model(tokens_tensor)[0].sum(dim=1)  # Sum along seq_len
         data.append(context_embeddings)
         for y in x[-1]:
             edges.append((y, idx))
