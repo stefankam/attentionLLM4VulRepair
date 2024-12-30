@@ -17,10 +17,10 @@ from model.data_loader import get_dataload
 # Hyperparameters
 vulnerability = 'command_injection'
 batch_size = 1
-max_embeddings_position = 20000
+max_embeddings_position = 30000
 max_target_length = 256
 learning_rate = 1e-4
-num_epochs = 1
+num_epochs = 10
 beam_size = 4
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -147,10 +147,10 @@ lr_monitor = LearningRateMonitor(logging_interval="step")
 
 trainer = Trainer(
     accelerator="gpu",  # Use "gpu" for GPUs, or "cpu" for CPU
-    devices=1,  # Specify the number of GPUs (use "auto" to auto-detect available GPUs)
+    devices=4,  # Specify the number of GPUs (use "auto" to auto-detect available GPUs)
     strategy="ddp_find_unused_parameters_true",  # Use DDP for multi-GPU distributed training
     precision=16,  # Mixed precision for faster training and reduced memory usage
-    max_epochs=1,  # Maximum number of epochs
+    max_epochs=num_epochs,  # Maximum number of epochs
     callbacks=[checkpoint_callback, lr_monitor]
 )
 

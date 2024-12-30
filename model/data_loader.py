@@ -67,6 +67,9 @@ def collate_fn(batch, tokenizer, embedding_model, max_length, device):
     # Filter out None values from the batch list
     batch = [item for item in batch if item is not None and len(item) == 3]
  
+    # Before tokenization, ensure that device is set correctly
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")    
+
     if not batch:  # Handle cases where the entire batch is filtered out
         return None
 
