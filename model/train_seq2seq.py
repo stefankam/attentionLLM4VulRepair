@@ -147,7 +147,7 @@ lr_monitor = LearningRateMonitor(logging_interval="step")
 
 trainer = Trainer(
     accelerator="gpu",  # Use "gpu" for GPUs, or "cpu" for CPU
-    devices=4,  # Specify the number of GPUs (use "auto" to auto-detect available GPUs)
+    devices="auto",  # Specify the number of GPUs (use "auto" to auto-detect available GPUs)
     strategy="ddp_find_unused_parameters_true",  # Use DDP for multi-GPU distributed training
     precision=16,  # Mixed precision for faster training and reduced memory usage
     max_epochs=num_epochs,  # Maximum number of epochs
