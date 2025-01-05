@@ -16,11 +16,11 @@ from model.data_loader import get_dataload
 
 # Hyperparameters
 vulnerability = 'command_injection'
-batch_size = 1
-max_embeddings_position = 30000
+batch_size = 4
+max_embeddings_position = 5000
 max_target_length = 256
 learning_rate = 1e-4
-num_epochs = 10
+num_epochs = 100
 beam_size = 4
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 

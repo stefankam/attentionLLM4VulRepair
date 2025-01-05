@@ -53,8 +53,9 @@ class CodeDataset(torch.utils.data.Dataset):
         return len(self.data)
 
     def __getitem__(self, idx):
-        code_snippet = self.data[idx]['code']
-        fix_snippet = self.data[idx]['fix']
+        max_input_size = 5000  # Define the maximum input size for truncation
+        code_snippet = self.data[idx]['code'][:max_input_size]  # Truncate code
+        fix_snippet = self.data[idx]['fix'][:max_input_size]  # Truncate code
         graph_result = get_graph_dfg_data(code_snippet, self.embedding_model, self.tokenizer, lang=self.lang)
         if graph_result is None:
             print("Warning: No graph data generated for this sample.")
@@ -117,7 +118,7 @@ def collate_fn(batch, tokenizer, embedding_model, max_length, device):
         if num_nodes < max_graph_size:
             padding_size = max_graph_size - num_nodes
             padded_x = F.pad(graph.x, (0, 0, 0, padding_size), mode='constant', value=0)
-            padded_edge_index = torch.cat([graph.edge_index, torch.zeros(2, padding_size).long().to(device)], dim=1)
+            padded_edge_index = torch.cat([graph.edge_index.to(device), torch.zeros(2, padding_size).long().to(device)], dim=1)
             padded_graphs.append(Data(x=padded_x.to(device), edge_index=padded_edge_index))
         else:
             padded_graphs.append(graph)
