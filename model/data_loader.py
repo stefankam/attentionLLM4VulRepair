@@ -1,6 +1,3 @@
-
-
-
 import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
@@ -9,6 +6,9 @@ from experiment.utils import get_graph_dfg_data
 from torch_geometric.data import Data
 
 import os
+
+# Before tokenization, ensure that device is set correctly
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")  
 
 # Define dataset structure
 class CodeDataset(torch.utils.data.Dataset):
@@ -66,11 +66,7 @@ class CodeDataset(torch.utils.data.Dataset):
 
 def collate_fn(batch, tokenizer, embedding_model, max_length, device):
     # Filter out None values from the batch list
-    batch = [item for item in batch if item is not None and len(item) == 3]
- 
-    # Before tokenization, ensure that device is set correctly
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")    
-
+    batch = [item for item in batch if item is not None]
     if not batch:  # Handle cases where the entire batch is filtered out
         return None
 
@@ -91,8 +87,8 @@ def collate_fn(batch, tokenizer, embedding_model, max_length, device):
     tokenized_codes = {key: value.to(device) for key, value in tokenized_codes.items()}
     tokenized_fixes = {key: value.to(device) for key, value in tokenized_fixes.items()}
 
-    code_token_ids = tokenized_codes['input_ids'].to(device)
-    fix_token_ids = tokenized_fixes['input_ids'].to(device)
+    code_token_ids = tokenized_codes['input_ids']
+    fix_token_ids = tokenized_fixes['input_ids']
 
     # Ensure the shapes of tokenized codes and fixes are consistent
 #    assert code_token_ids.size(1) == fix_token_ids.size(1), f"Code and fix token sizes don't match! {code_token_ids.size(1)} vs {fix_token_ids.size(1)}"
@@ -102,8 +98,8 @@ def collate_fn(batch, tokenizer, embedding_model, max_length, device):
         code_outputs = embedding_model(**tokenized_codes)
         fix_outputs = embedding_model(**tokenized_fixes)
 
-    sequence_embeddings = code_outputs.last_hidden_state.to(device)
-    fix_embeddings = fix_outputs.last_hidden_state.to(device)
+    sequence_embeddings = code_outputs.last_hidden_state
+    fix_embeddings = fix_outputs.last_hidden_state
 
     # Handle graph data
     max_graph_size = max(graph.x.size(0) for graph in graphs)
@@ -119,7 +115,7 @@ def collate_fn(batch, tokenizer, embedding_model, max_length, device):
             padding_size = max_graph_size - num_nodes
             padded_x = F.pad(graph.x, (0, 0, 0, padding_size), mode='constant', value=0)
             padded_edge_index = torch.cat([graph.edge_index.to(device), torch.zeros(2, padding_size).long().to(device)], dim=1)
-            padded_graphs.append(Data(x=padded_x.to(device), edge_index=padded_edge_index))
+            padded_graphs.append(Data(x=padded_x.to(device), edge_index=padded_edge_index.to(device)))
         else:
             padded_graphs.append(graph)
 
@@ -129,6 +125,7 @@ def collate_fn(batch, tokenizer, embedding_model, max_length, device):
     print(f"Attention Mask Device: {tokenized_codes['attention_mask'].device}")
     return code_token_ids, fix_token_ids, codes, fixes, padded_graphs, sequence_embeddings, fix_embeddings
 
+
 def get_dataload(device, max_length, batch_size=2, vulnerability='command_injection', loader_type='train'):
     config = RobertaConfig.from_pretrained("Salesforce/codet5-base")
     config.max_position_embeddings = max_length  # Increase max position embeddings
@@ -137,11 +134,14 @@ def get_dataload(device, max_length, batch_size=2, vulnerability='command_inject
 
     # File containing code snippets with vulnerability tags and corresponding labels
     filepath = ("/home/skb67/attentionLLM4VulRepair/data/processed_data/{}/{}/code".format(vulnerability, loader_type))
+    generator = torch.Generator(device='cuda')  # Ensure generator is CUDA-based
 
     # Create the dataset and DataLoader
     dataset = CodeDataset(filepath, tokenizer, embedding_model)
     data_loader = DataLoader(dataset, batch_size=batch_size,
                              collate_fn=lambda b: collate_fn(b, tokenizer, embedding_model, max_length, device),
-                             shuffle=True)
+                             shuffle=True,
+                             generator=generator
+    )
 
     return data_loader
